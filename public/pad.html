@@ -1,6 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="icon" href="data:,">
 <title>G-Force Crew pad</title>
 <style>
   :root { --bg: #0b1220; --panel: #16213a; --fg: #eef3ff; --accent: #ffb020; --ok: #46e08a; }
@@ -19,18 +20,25 @@
   #hud { display: flex; align-items: center; gap: 10px; font-size: 15px; }
   .pip { display: inline-block; width: 12px; height: 8px; margin-right: 3px; border-radius: 2px; background: var(--ok); }
   .pip.off { background: #ffffff30; }
-  #field { flex: 1; min-height: 0; background: var(--panel); border-radius: 20px; position: relative; display: none; }
+  #row { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+  @media (orientation: landscape) and (max-height: 520px) {
+    #row { flex-direction: row; }
+    body { padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); gap: 8px; }
+  }
+  #field { flex: 1; min-height: 0; background: var(--panel); border-radius: 20px; position: relative; }
   #field::before, #field::after { content: ""; position: absolute; background: #ffffff20; }
   #field::before { left: 50%; top: 8%; bottom: 8%; width: 2px; }
   #field::after { top: 50%; left: 8%; right: 8%; height: 2px; }
   #ball { width: 64px; height: 64px; border-radius: 50%; background: var(--accent); position: absolute; left: calc(50% - 32px); top: calc(50% - 32px); }
-  #fire { flex: 1; min-height: 0; font-size: 40px; border-radius: 20px; display: none; background: #ff5d5d; color: #fff; }
+  #fire { flex: 1.3; min-height: 0; font-size: 40px; border-radius: 20px; background: #ff5d5d; color: #fff; }
   #fire.down { background: #ff9a9a; }
-  #tools { display: none; gap: 8px; flex-wrap: wrap; }
+  #tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  #wing { min-height: 1.3em; }
+  #wing.link { color: var(--accent); font-weight: 700; opacity: 1; }
   .status { font-size: 14px; opacity: .75; min-height: 1.3em; }
   #flash { position: fixed; inset: 0; background: #ff2d2d; opacity: 0; pointer-events: none; transition: opacity .35s; }
   #flash.on { opacity: .55; transition: none; }
-  #tilt { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center; text-align: center; padding: 32px; z-index: 5; }
+  #tilt { position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; gap: 18px; align-items: center; justify-content: center; text-align: center; padding: 32px; z-index: 5; }
 </style>
 
 <div id="join">
@@ -43,17 +51,21 @@
 
 <div id="play">
   <div id="top"><div id="pill"></div><div id="hud"><span id="pips"></span><span id="score">0</span></div></div>
-  <div id="field"><div id="ball"></div></div>
-  <button id="fire">HOLD TO FIRE</button>
+  <div id="wing" class="status"></div>
+  <div id="row">
+    <div id="field"><div id="ball"></div></div>
+    <button id="fire">HOLD TO FIRE</button>
+  </div>
   <div id="tools">
     <button class="ghost" id="recenter">Recenter</button>
     <button class="ghost" id="invR">Flip left/right</button>
     <button class="ghost" id="invP">Flip up/down</button>
+    <button class="ghost" id="mode"></button>
   </div>
   <div id="status" class="status"></div>
 </div>
 <div id="flash"></div>
-<div id="tilt">Hold your phone upright (portrait) to fly.</div>
+<div id="tilt"><div id="tiltMsg"></div><button id="swap">Switch mode</button></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -66,8 +78,9 @@ function tiltToAxis(deg) {
   return Math.sign(deg) * m ** 1.4;
 }
 
-let ws, joined = false, role = null, wantRoom = "", wantName = "", sensors = false, last = null, zero = null;
-let flipR = ls("gfc.flipR") === "1", flipP = ls("gfc.flipP") === "1";
+let ws, joined = false, wantRoom = "", wantName = "", sensors = false, seen = false, last = null, zero = null;
+let flipR = ls("gfc.flipR") === "1", flipP = ls("gfc.flipP") === "1", land = ls("gfc.land") === "1";
+const D = Math.PI / 180, wrap = (d) => ((d + 540) % 360) - 180;
 const axes = { r: 0, p: 0 };
 let token = Math.random().toString(36).slice(2) + Date.now().toString(36);
 try { token = sessionStorage.gfcToken || (sessionStorage.gfcToken = token); } catch {}
@@ -82,13 +95,34 @@ const showBall = () => {
 const setPips = (h) => { $("pips").innerHTML = Array.from({ length: 8 }, (_, i) => `<i class="pip${i < h ? "" : " off"}"></i>`).join(""); };
 setPips(8);
 
+const angle = () => (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
+const checkOverlay = () => {                              // ask for the other hold when the phone and the mode disagree
+  $("tilt").style.display = joined && sensors && land !== (angle() % 180 === 90) ? "flex" : "none";
+  $("tiltMsg").textContent = land ? "Turn your phone sideways (and allow auto-rotate) for landscape mode." : "Hold your phone upright (portrait), or switch to landscape mode.";
+};
+const setMode = () => {
+  zero = last = null;                                     // the old mode's reading means something else now
+  $("mode").textContent = land ? "Mode: landscape wheel" : "Mode: portrait tray";
+  checkOverlay();
+};
+$("mode").onclick = $("swap").onclick = () => { land = !land; ls("gfc.land", land ? "1" : "0"); setMode(); };
+addEventListener("resize", checkOverlay);
+setMode();
+
 addEventListener("deviceorientation", (e) => {
+  if (e.gamma != null) seen = true;                     // browsers fire the first event at page load, and later ones only when the reading changes
   if (!sensors || e.gamma == null || e.beta == null) return;
-  last = { g: e.gamma, b: e.beta };
-  $("tilt").style.display = (screen.orientation?.angle ?? window.orientation ?? 0) && role === "pilot" ? "flex" : "none";
+  const ang = angle();
+  if (land) {
+    // wheel: where "up" points in the screen's own frame, so any phone and either landscape side reads the same
+    const bt = e.beta * D, gm = e.gamma * D;
+    const ux = -Math.sin(gm) * Math.cos(bt), uy = Math.sin(bt), uz = Math.cos(gm) * Math.cos(bt);
+    const [sx, sy] = ang === 90 ? [-uy, ux] : ang === 270 ? [uy, -ux] : ang === 180 ? [-ux, -uy] : [ux, uy];
+    last = { g: Math.atan2(-sx, sy) / D, b: Math.atan2(-uz, sy) / D };   // g: twist clockwise = right, b: top toward you = climb
+  } else last = { g: e.gamma, b: e.beta };                                // tray: lean right = right, top toward you = climb
   if (!zero) zero = { ...last };
-  axes.r = tiltToAxis(last.g - zero.g) * (flipR ? -1 : 1);                       // lean right = fly right
-  axes.p = tiltToAxis(((last.b - zero.b + 540) % 360) - 180) * (flipP ? -1 : 1);  // top toward you = climb
+  axes.r = tiltToAxis(wrap(last.g - zero.g)) * (flipR ? -1 : 1);
+  axes.p = tiltToAxis(wrap(last.b - zero.b)) * (flipP ? -1 : 1);
   showBall();
 });
 
@@ -98,14 +132,15 @@ function connect() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.t === "joined") {
-      joined = true; role = m.role; zero = null;
+      joined = true; zero = null; checkOverlay();
       $("join").style.display = "none"; $("play").style.display = "flex";
-      $("pill").textContent = `Crew ${m.crew} · ${m.role}`;
-      $("field").style.display = $("tools").style.display = m.role === "pilot" ? "flex" : "none";
-      $("fire").style.display = m.role === "gunner" ? "block" : "none";
-      $("status").textContent = m.role === "gunner" ? "You are the gunner. Hold FIRE; your pilot steers."
-        : sensors ? "Tilt to fly. Tap Recenter if it drifts." : "No motion sensor found: drag in the box to steer.";
-    } else if (m.t === "hud") { $("score").textContent = m.sc; setPips(m.h); }
+      $("pill").textContent = `Crew ${m.crew}`;
+      $("status").textContent = sensors ? "Tilt to fly, hold FIRE to shoot. Tap Recenter if it drifts." : "No motion sensor found: drag in the box to steer.";
+    } else if (m.t === "hud") {
+      $("score").textContent = `${m.k} kills · ${m.sc}`; setPips(m.h);
+      $("wing").className = "status" + (m.l ? " link" : "");
+      $("wing").textContent = !m.w ? "Waiting for a wingmate..." : m.l ? `LINKED with ${m.w}: x2 points, faster fire` : `Wingmate ${m.w}: fly close to link up`;
+    }
     else if (m.t === "hit") { $("flash").classList.add("on"); setTimeout(() => $("flash").classList.remove("on"), 80); navigator.vibrate?.(120); }
     else if (m.t === "error") {
       if (joined) $("status").textContent = m.msg; else { $("joinStatus").textContent = m.msg; $("go").disabled = false; }
@@ -121,7 +156,7 @@ $("go").onclick = async () => {
   $("go").disabled = true; ls("gfc.name", wantName);
   try {                                                                           // iOS needs this inside the tap, Android just sends events
     if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== "granted") throw 0;
-    sensors = await new Promise((resolve) => {
+    sensors = seen || await new Promise((resolve) => {
       const timer = setTimeout(() => { removeEventListener("deviceorientation", probe); resolve(false); }, 1500);
       function probe(e) { if (e.gamma == null) return; clearTimeout(timer); removeEventListener("deviceorientation", probe); resolve(true); }
       addEventListener("deviceorientation", probe);
@@ -131,7 +166,7 @@ $("go").onclick = async () => {
   connect();
 };
 
-setInterval(() => { if (role === "pilot" && ws?.readyState === 1) ws.send(`{"t":"in","r":${axes.r.toFixed(3)},"p":${axes.p.toFixed(3)}}`); }, 33);
+setInterval(() => { if (joined && ws?.readyState === 1) ws.send(`{"t":"in","r":${axes.r.toFixed(3)},"p":${axes.p.toFixed(3)}}`); }, 33);
 
 const fire = (on) => { $("fire").classList.toggle("down", on); if (ws?.readyState === 1) ws.send(`{"t":"fire","on":${on ? 1 : 0}}`); };
 $("fire").onpointerdown = (e) => { e.preventDefault(); fire(true); };

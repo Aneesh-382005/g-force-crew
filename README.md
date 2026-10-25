@@ -1,12 +1,12 @@
 # G-Force Crew
 
-A co-op plane game for a room full of phones. A laptop on the big screen shows the sky; players scan a QR code and fly with their phones. Players are paired into **crews of two**: the **pilot** tilts their phone to steer, the **gunner** holds a button to fire. The whole room shares one score and one hull bar.
+A co-op plane game for a room full of phones. A laptop on the big screen shows the sky; players scan a QR code and each get their own plane: **tilt the phone to steer, hold FIRE to shoot**. Everyone shares one score and one hull bar, and each player is paired with a **wingmate**. Fly close to your wingmate to **link up**: a gold beam appears, you fire faster, and your kills are worth double. The end screen ranks everyone by kills.
 
 Works on iPhone (Safari), Android (Chrome), and any laptop browser. No app, no accounts, no hardware.
 
 ```
-phone (pilot)  --tilt, 30/s-->  server (Node, ws)  --snapshots, 30/s-->  big screen (Three.js)
-phone (gunner) --fire on/off->  runs the game at 30 Hz
+phone --tilt 30/s, fire on/off-->  server (Node, ws)  --snapshots 30/s-->  big screen (Three.js)
+phone <-- kills, link, hull 4/s --  runs the game at 30 Hz
 ```
 
 The server owns the game (`shared/sim.js`, no DOM), so every screen sees the same world, and enemy waves come from a seeded RNG.
@@ -51,13 +51,14 @@ Only one machine needs to host. Everyone else just opens the link.
 
 | | |
 |---|---|
-| Pilot | tilt the phone like a tray: lean right = right, pull the top toward you = climb. **Recenter** sets "level" |
-| Gunner | hold FIRE |
-| No motion sensor | the pilot drags inside the box instead |
-| Big screen | `Enter` start · `M` sound · `N` skip time of day |
+| Steer | tilt the phone. **Portrait tray**: lean right = right, top toward you = climb. **Landscape wheel**: hold it sideways and twist like a steering wheel, top toward you = climb |
+| Fire | hold the big FIRE button |
+| Recenter | sets "level" to how you are holding the phone now |
+| Mode | the **Mode** button switches portrait tray / landscape wheel. The page asks you to rotate the phone if it disagrees with the mode |
+| No motion sensor | drag inside the box instead |
+| Big screen | `Enter` start / play again, `M` sound, `N` skip time of day |
 
-If a direction feels backwards, the pilot has **Flip left/right** and **Flip up/down** buttons.
-A crew with no gunner auto-fires slowly. Put your own audio at `public/music.mp3` and the big screen loops it (not included).
+If a direction feels backwards, use **Flip left/right** or **Flip up/down**. Put your own audio at `public/music.mp3` and the big screen loops it (not included).
 
 ## Tests
 
@@ -68,5 +69,5 @@ npm test      # sim rules + a real server with fake phones
 ## Known limits
 
 - Anyone who knows the room URL can open a screen or join; there is no auth. Fine for a meetup, not for the open internet.
-- Phones must stay portrait while flying. Rotation is detected and a reminder is shown.
+- The tilt maths is checked against Chromium's emulated sensors (portrait, and landscape rotated 90 degrees). Real phones, iOS, and the other landscape side (270) are only covered by unit tests so far.
 - Sensor behaviour differs between phone models; test on one iPhone and one Android before the event.

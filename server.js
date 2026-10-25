@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { createGame, startGame, syncCrew, setInput, setFiring, step, snapshot } from "./shared/sim.js";
+import { createGame, startGame, syncShip, setInput, setFiring, step, snapshot } from "./shared/sim.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PORT = Number(process.env.PORT) || 8000;
@@ -32,16 +32,16 @@ const http = createServer(async (req, res) => {
   }
 });
 
-// room: { code, screen, game, players: Map(token -> { token, ws, name, crew, role, drop }), crews: Map(id -> { id, pilot, gunner }), ... }
+// room: { code, screen, game, players: Map(token -> { token, id, ws, name, crew, drop }), crews: Map(id -> { id, members: [token] }), ... }
 const rooms = new Map();
 
 const syncRoom = (room) => {
-  for (const id of [...room.game.ships.keys()]) if (!room.crews.has(id)) syncCrew(room.game, id, null);
-  for (const c of room.crews.values())
-    syncCrew(room.game, c.id, { pilot: alive(room.players.get(c.pilot)), gunner: alive(room.players.get(c.gunner)) });
+  const ids = new Set();
+  for (const p of room.players.values()) { ids.add(p.id); syncShip(room.game, p.id, p.crew, alive(p)); }
+  for (const id of [...room.game.ships.keys()]) if (!ids.has(id)) syncShip(room.game, id, null);
   send(room.screen, {
     t: "roster",
-    players: [...room.players.values()].map((p) => ({ crew: p.crew, role: p.role, name: p.name, on: alive(p) })),
+    players: [...room.players.values()].map((p) => ({ id: p.id, crew: p.crew, name: p.name, on: alive(p) })),
   });
 };
 
@@ -60,17 +60,17 @@ wss.on("connection", (ws) => {
       else if (rooms.size >= MAX_ROOMS) return send(ws, { t: "error", msg: "too many rooms" });
       else {
         let code; do code = Array.from({ length: 4 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join(""); while (rooms.has(code));
-        const r = room = { code, screen: ws, game: createGame(randSeed()), players: new Map(), crews: new Map(), nextCrew: 1, n: 0, grace: null };
+        const r = room = { code, screen: ws, game: createGame(randSeed()), players: new Map(), crews: new Map(), nextCrew: 1, nextId: 1, n: 0, grace: null };
         rooms.set(code, r);
         r.loop = setInterval(() => {
           step(r.game);
           const snap = snapshot(r.game);
           send(r.screen, { t: "snap", ...snap });
-          for (const ev of snap.ev) if (ev[0] === "h") {
-            const c = r.crews.get(ev[1]);
-            for (const tok of [c?.pilot, c?.gunner]) send(r.players.get(tok)?.ws, { t: "hit" });
+          for (const ev of snap.ev) if (ev[0] === "h") send([...r.players.values()].find((q) => q.id === ev[1])?.ws, { t: "hit" });
+          if (++r.n % 8 === 0) for (const p of r.players.values()) {
+            const ship = r.game.ships.get(p.id), mate = r.crews.get(p.crew).members.map((t) => r.players.get(t)).find((q) => q !== p);
+            send(p.ws, { t: "hud", s: snap.s, sc: snap.sc, h: snap.h, k: ship?.kills ?? 0, l: ship?.linked ? 1 : 0, w: mate?.name ?? null });
           }
-          if (++r.n % 8 === 0) for (const p of r.players.values()) send(p.ws, { t: "hud", s: snap.s, sc: snap.sc, h: snap.h });
         }, 1000 / 30);
       }
       send(ws, { t: "room", code: room.code, url: PUBLIC_URL || null });
@@ -83,25 +83,25 @@ wss.on("connection", (ws) => {
       let p = r.players.get(token);
       if (!p) {
         if (r.players.size >= MAX_PLAYERS) return send(ws, { t: "error", msg: "room is full" });
-        p = { token, drop: null };
+        p = { token, id: r.nextId++, drop: null };
         r.players.set(token, p);
-        // fill a half-empty crew first so people get paired, otherwise start a new crew as its pilot
-        const half = [...r.crews.values()].find((c) => !c.pilot !== !c.gunner);
-        if (half) { p.role = half.pilot ? "gunner" : "pilot"; p.crew = half.id; half[p.role] = token; }
-        else { r.crews.set(r.nextCrew, { id: r.nextCrew, pilot: token, gunner: null }); p.role = "pilot"; p.crew = r.nextCrew++; }
+        // wingmates: join a crew that has one member, otherwise start a new crew
+        const half = [...r.crews.values()].find((c) => c.members.length === 1);
+        if (half) { half.members.push(token); p.crew = half.id; }
+        else { r.crews.set(r.nextCrew, { id: r.nextCrew, members: [token] }); p.crew = r.nextCrew++; }
       }
       clearTimeout(p.drop);
       p.ws = ws; p.name = String(m.name || "pilot").replace(/[<>&"'`]/g, "").slice(0, 12);
       room = r; me = p;
-      send(ws, { t: "joined", crew: p.crew, role: p.role });
+      send(ws, { t: "joined", crew: p.crew });
       syncRoom(room);
 
     } else if (room && ws === room.screen) {
       if (m.t === "start" && room.game.ships.size) startGame(room.game, randSeed());
 
     } else if (me) {
-      if (m.t === "in" && me.role === "pilot") setInput(room.game, me.crew, axis(m.r), axis(m.p));
-      else if (m.t === "fire" && me.role === "gunner") setFiring(room.game, me.crew, m.on);
+      if (m.t === "in") setInput(room.game, me.id, axis(m.r), axis(m.p));
+      else if (m.t === "fire") setFiring(room.game, me.id, m.on);
     }
   });
 
@@ -119,8 +119,8 @@ wss.on("connection", (ws) => {
       me.drop = setTimeout(() => {
         room.players.delete(me.token);
         const c = room.crews.get(me.crew);
-        c[me.role] = null;
-        if (!c.pilot && !c.gunner) room.crews.delete(c.id);
+        c.members = c.members.filter((t) => t !== me.token);
+        if (!c.members.length) room.crews.delete(c.id);
         syncRoom(room);
       }, PHONE_GRACE);
       syncRoom(room);

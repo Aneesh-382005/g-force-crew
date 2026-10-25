@@ -25,13 +25,12 @@ async function phone(room, name, token) {
   const p = client(); await p.ready; p.send({ t: "join", room, name, token }); await sleep(100); return p;
 }
 
-test("phones are paired into crews, and the room code is hidden from nobody", async () => {
+test("players are paired into wing crews of two", async () => {
   const s = await screen();
   const { code, url } = s.last("room");
   assert.match(code, /^[A-HJ-NP-Z]{4}$/);
   assert.equal(url, "https://play.example.com");
   const a = await phone(code.toLowerCase(), "ann", "tok-a"), b = await phone(code, "bo", "tok-b"), c = await phone(code, "cy", "tok-c");
-  assert.deepEqual([a, b, c].map((p) => p.last("joined").role), ["pilot", "gunner", "pilot"]);
   assert.deepEqual([a, b, c].map((p) => p.last("joined").crew), [1, 1, 2]);
   assert.equal(s.last("roster").players.length, 3);
   for (const x of [s, a, b, c]) x.ws.close();
@@ -42,29 +41,30 @@ test("unknown room is refused", async () => {
   assert.equal(p.last("error").msg, "no such room");
 });
 
-test("only the screen can start; a gunner holding fire scores kills; a phone can reconnect to its seat", async () => {
+test("only the screen can start; a flying, firing player scores kills; a phone can reconnect to its seat", async () => {
   const s = await screen(); const { code } = s.last("room");
-  const pilot = await phone(code, "ann", "tok-1"), gunner = await phone(code, "bo", "tok-2");
+  const pilot = await phone(code, "ann", "tok-1"), gunner = await phone(code, "bo", "tok-2");   // wingmates; ann flies and fires
   pilot.send({ t: "start" }); await sleep(150);                                  // ignored: not the screen
   assert.equal(s.last("snap").s, "lobby");
   s.send({ t: "start" }); await sleep(100);
   assert.equal(s.last("snap").s, "play");
 
-  gunner.send({ t: "fire", on: 1 });
+  pilot.send({ t: "fire", on: 1 });
   const autopilot = setInterval(() => {
     const snap = s.last("snap"), me = snap?.sh.find((x) => x[0] === 1);
     const e = snap?.en.filter((x) => x[3] < -15).sort((a, b) => b[3] - a[3])[0];
-    if (me && e) pilot.send({ t: "in", r: Math.max(-1, Math.min(1, (e[1] - me[1]) / 5)), p: Math.max(-1, Math.min(1, (e[2] - me[2]) / 4)) });
+    if (me && e) pilot.send({ t: "in", r: Math.max(-1, Math.min(1, (e[1] - me[2]) / 5)), p: Math.max(-1, Math.min(1, (e[2] - me[3]) / 4)) });
   }, 33);
   await sleep(9000);
   clearInterval(autopilot);
   const snap = s.last("snap");
   assert.ok(snap.sc > 0, `expected kills, score was ${snap.sc}`);
-  assert.ok(gunner.last("hud"), "phones receive hud updates");
+  const hud = pilot.last("hud");
+  assert.ok(hud && hud.k > 0 && hud.w === "bo", `hud shows own kills and wingmate (${JSON.stringify(hud)})`);
 
   gunner.ws.close(); await sleep(150);
   const back = await phone(code, "bo", "tok-2");                                 // same token = same seat
-  assert.deepEqual([back.last("joined").role, back.last("joined").crew], ["gunner", 1]);
+  assert.equal(back.last("joined").crew, 1);
   assert.equal(s.last("roster").players.length, 2);
 
   s.ws.close(); await sleep(100);
