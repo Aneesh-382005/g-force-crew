@@ -1,86 +1,36 @@
 # G-Force Crew
 
-A co-op plane game for a room full of phones. A laptop on the big screen shows the sky; players scan a QR code and each get their own plane: **tilt the phone to steer, hold FIRE to shoot**. Everyone shares one score and one hull bar, and each player is paired with a **wingmate**. Fly close to your wingmate to **link up**: a gold beam appears, you fire faster, and your kills are worth double. The end screen ranks everyone by kills.
-
-Works on iPhone (Safari), Android (Chrome), and any laptop browser. No app, no accounts, no hardware.
-
-```
-phone --tilt 30/s, fire on/off-->  server (Node, ws)  --snapshots 30/s-->  big screen (Three.js)
-phone <-- kills, link, hull 4/s --  runs the game at 30 Hz
-```
-
-The server owns the game (`shared/sim.js`, no DOM), so every screen sees the same world, and enemy waves come from a seeded RNG.
+A party game for a room of phones. A laptop shows the sky on a projector; everyone scans a QR code and flies their own plane by **tilting their phone**. The whole room shares one score and one hull bar.
 
 ## Run it
 
-Phones need **HTTPS** to read their motion sensors, so the game has to be reachable at an `https://` address. Open that address on the big screen too: the QR code is built from whatever address the big screen was opened on.
+1. **Install [Docker](https://docs.docker.com/get-docker/) first** (Windows, macOS or Linux). Only the host needs it; players just use their phones.
+2. Start the game and get an https link (phones need https to read their tilt sensor):
+   ```bash
+   docker compose --profile tunnel up -d --build
+   docker compose logs tunnel | grep -o 'https://[a-z0-9-]*.trycloudflare.com'
+   ```
+3. Open that link on the projector and press **Enter** to start. Everyone else scans the QR code.
 
-**With Docker only** (Windows, macOS, Linux; nothing else to install):
+Stop with `docker compose --profile tunnel down`.
+No Docker? Run `npm install && npm start`, then `cloudflared tunnel --url http://localhost:8000`.
 
-```bash
-docker compose --profile tunnel up -d --build
-docker compose logs tunnel | grep trycloudflare     # the https link; open it on the big screen
-```
+## Playing
 
-**With Node** (`npm install`, then):
+- **Tilt** to steer, **hold FIRE** to shoot. Your phone is tinted in your plane's colour.
+- **Recenter** if it drifts. **Mode** switches portrait / landscape (hold sideways like a steering wheel).
+- Controls backwards? Tap **Flip left/right** or **Flip up/down**.
+- You get a **wingmate**: fly close together to link up (gold beam) for faster fire and double points.
+- The end screen ranks everyone by kills.
+- Projector keys: `Enter` start · `M` sound · `N` skip time of day · `C` calm mode (no shaking).
 
-```bash
-npm start                                            # http://localhost:8000
-cloudflared tunnel --url http://localhost:8000       # prints https://<random>.trycloudflare.com
-```
+## Setups
 
-**On a server** (HTTPS on port 443 with a real certificate; needs a domain pointing at the machine):
+- **One projector, everyone plays:** run the host on the projector laptop (lowest latency).
+- **A screen per pair:** each laptop opens the same link and gets its own room code (up to 8).
+- **Extra screen:** open `/?watch=CODE` to mirror a running game.
+- **Own server:** `DOMAIN=play.example.com docker compose --profile https up -d --build` (https on port 443).
 
-```bash
-DOMAIN=play.example.com docker compose --profile https up -d --build
-```
+## Developers
 
-## Run it from a published image (no source needed)
-
-CI builds an amd64 + arm64 image on every push to `main`: `ghcr.io/<owner>/<repo>` (set the package to public once in GitHub). Then on any laptop with Docker:
-
-```bash
-docker run -d -p 8000:8000 ghcr.io/<owner>/<repo>
-```
-
-Offline (no internet at the venue): copy `dist/g-force-crew-amd64.tar.gz` on a USB stick, then `docker load -i g-force-crew-amd64.tar.gz` and `docker run -d -p 8000:8000 g-force-crew`. The offline file is amd64 only; Apple Silicon Macs run it through emulation, or pull the published image beforehand.
-
-Only one machine needs to host. Everyone else just opens the link.
-
-## Ways to run an event
-
-All three work with the same build:
-
-- **One projector, everyone plays.** Run the server on the laptop that drives the projector and open the page full-screen on it. Everyone scans the QR code and flies in the same world. Only the phone-to-laptop leg crosses a network; the screen is on the same machine as the server, so nothing has to travel back.
-- **A screen per pair.** Each extra laptop opens the same server URL and gets its **own room and code** (up to 8 rooms), so two players fly at each screen.
-- **A second screen for the same game.** Open `/?watch=CODE` on another laptop or projector to mirror a running game. Only the host screen can start it.
-
-## Controls
-
-| | |
-|---|---|
-| Steer | tilt the phone. **Portrait tray**: lean right = right, top toward you = climb. **Landscape wheel**: hold it sideways and twist like a steering wheel, top toward you = climb |
-| Fire | hold the big FIRE button |
-| Recenter | sets "level" to how you are holding the phone now |
-| Mode | the **Mode** button switches portrait tray / landscape wheel. The page asks you to rotate the phone if it disagrees with the mode |
-| No motion sensor | drag inside the box instead |
-| Big screen | `Enter` start / play again, `M` sound, `N` skip time of day, `C` calm mode (no screen shake or flashes; on by default if the system asks for reduced motion) |
-
-If a direction feels backwards, use **Flip left/right** or **Flip up/down**. Put your own audio at `public/music.mp3` and the big screen loops it (not included).
-
-## Tests
-
-```bash
-npm test      # sim rules + a real server with fake phones
-```
-
-## Tuning the feel
-
-- `DELAY` in `public/screen.html` (45 ms): how far behind real time the screen draws, so it always has two snapshots to blend. Snapshots arrive every 33 ms, so keep it above that. If a slow projector laptop makes planes stutter, raise it to about 60.
-- The `20` in `step()` in `shared/sim.js`: how quickly a plane follows your tilt (higher is snappier, lower is smoother).
-
-## Known limits
-
-- Anyone who knows the room URL can open a screen or join; there is no auth. Fine for a meetup, not for the open internet.
-- The tilt maths is checked against Chromium's emulated sensors (portrait, and landscape rotated 90 degrees). Real phones, iOS, and the other landscape side (270) are only covered by unit tests so far.
-- Sensor behaviour differs between phone models; test on one iPhone and one Android before the event.
+`npm test` runs the tests. Feel is tuned by `DELAY` in `public/screen.html` and the easing rate (`20`) in `shared/sim.js`. For music, put a `music.mp3` in `public/`.
