@@ -1,0 +1,153 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>G-Force Crew pad</title>
+<style>
+  :root { --bg: #0b1220; --panel: #16213a; --fg: #eef3ff; --accent: #ffb020; --ok: #46e08a; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 18px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; gap: 14px; padding: max(16px, env(safe-area-inset-top)) 16px 16px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  input, button { font: inherit; padding: 14px; border-radius: 12px; border: 0; }
+  input { background: var(--panel); color: var(--fg); }
+  button { background: var(--accent); color: #111; font-weight: 700; }
+  button.ghost { background: var(--panel); color: var(--fg); font-weight: 500; padding: 10px 14px; font-size: 15px; }
+  h1 { margin: 0; font-size: 26px; }
+  #join, #play { display: flex; flex-direction: column; gap: 14px; }
+  #play { display: none; flex: 1; min-height: 0; }
+  #top { display: flex; justify-content: space-between; align-items: center; }
+  #pill { background: var(--panel); border-radius: 999px; padding: 6px 14px; font-weight: 700; }
+  #hud { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+  .pip { display: inline-block; width: 12px; height: 8px; margin-right: 3px; border-radius: 2px; background: var(--ok); }
+  .pip.off { background: #ffffff30; }
+  #field { flex: 1; min-height: 0; background: var(--panel); border-radius: 20px; position: relative; display: none; }
+  #field::before, #field::after { content: ""; position: absolute; background: #ffffff20; }
+  #field::before { left: 50%; top: 8%; bottom: 8%; width: 2px; }
+  #field::after { top: 50%; left: 8%; right: 8%; height: 2px; }
+  #ball { width: 64px; height: 64px; border-radius: 50%; background: var(--accent); position: absolute; left: calc(50% - 32px); top: calc(50% - 32px); }
+  #fire { flex: 1; min-height: 0; font-size: 40px; border-radius: 20px; display: none; background: #ff5d5d; color: #fff; }
+  #fire.down { background: #ff9a9a; }
+  #tools { display: none; gap: 8px; flex-wrap: wrap; }
+  .status { font-size: 14px; opacity: .75; min-height: 1.3em; }
+  #flash { position: fixed; inset: 0; background: #ff2d2d; opacity: 0; pointer-events: none; transition: opacity .35s; }
+  #flash.on { opacity: .55; transition: none; }
+  #tilt { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center; text-align: center; padding: 32px; z-index: 5; }
+</style>
+
+<div id="join">
+  <h1>G-Force Crew</h1>
+  <input id="room" placeholder="Room code" maxlength="4" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
+  <input id="name" placeholder="Your name" maxlength="12" autocomplete="off">
+  <button id="go">Join</button>
+  <div id="joinStatus" class="status"></div>
+</div>
+
+<div id="play">
+  <div id="top"><div id="pill"></div><div id="hud"><span id="pips"></span><span id="score">0</span></div></div>
+  <div id="field"><div id="ball"></div></div>
+  <button id="fire">HOLD TO FIRE</button>
+  <div id="tools">
+    <button class="ghost" id="recenter">Recenter</button>
+    <button class="ghost" id="invR">Flip left/right</button>
+    <button class="ghost" id="invP">Flip up/down</button>
+  </div>
+  <div id="status" class="status"></div>
+</div>
+<div id="flash"></div>
+<div id="tilt">Hold your phone upright (portrait) to fly.</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const ls = (k, v) => { try { return v == null ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch {} };   // storage can throw in private tabs
+
+// degrees away from "level" -> steering in [-1, 1]: 3 deg dead zone, full at 24 deg, gentle near the middle
+function tiltToAxis(deg) {
+  const m = clamp((Math.abs(deg) - 3) / 21, 0, 1);
+  return Math.sign(deg) * m ** 1.4;
+}
+
+let ws, joined = false, role = null, wantRoom = "", wantName = "", sensors = false, last = null, zero = null;
+let flipR = ls("gfc.flipR") === "1", flipP = ls("gfc.flipP") === "1";
+const axes = { r: 0, p: 0 };
+let token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+try { token = sessionStorage.gfcToken || (sessionStorage.gfcToken = token); } catch {}
+
+$("room").value = (new URLSearchParams(location.search).get("room") || "").toUpperCase();
+$("name").value = ls("gfc.name") || "";
+
+const showBall = () => {
+  $("ball").style.left = `calc(${50 + axes.r * 38}% - 32px)`;
+  $("ball").style.top = `calc(${50 - axes.p * 38}% - 32px)`;
+};
+const setPips = (h) => { $("pips").innerHTML = Array.from({ length: 8 }, (_, i) => `<i class="pip${i < h ? "" : " off"}"></i>`).join(""); };
+setPips(8);
+
+addEventListener("deviceorientation", (e) => {
+  if (!sensors || e.gamma == null || e.beta == null) return;
+  last = { g: e.gamma, b: e.beta };
+  $("tilt").style.display = (screen.orientation?.angle ?? window.orientation ?? 0) && role === "pilot" ? "flex" : "none";
+  if (!zero) zero = { ...last };
+  axes.r = tiltToAxis(last.g - zero.g) * (flipR ? -1 : 1);                       // lean right = fly right
+  axes.p = tiltToAxis(((last.b - zero.b + 540) % 360) - 180) * (flipP ? -1 : 1);  // top toward you = climb
+  showBall();
+});
+
+function connect() {
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: wantRoom, name: wantName, token }));
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.t === "joined") {
+      joined = true; role = m.role; zero = null;
+      $("join").style.display = "none"; $("play").style.display = "flex";
+      $("pill").textContent = `Crew ${m.crew} · ${m.role}`;
+      $("field").style.display = $("tools").style.display = m.role === "pilot" ? "flex" : "none";
+      $("fire").style.display = m.role === "gunner" ? "block" : "none";
+      $("status").textContent = m.role === "gunner" ? "You are the gunner. Hold FIRE; your pilot steers."
+        : sensors ? "Tilt to fly. Tap Recenter if it drifts." : "No motion sensor found: drag in the box to steer.";
+    } else if (m.t === "hud") { $("score").textContent = m.sc; setPips(m.h); }
+    else if (m.t === "hit") { $("flash").classList.add("on"); setTimeout(() => $("flash").classList.remove("on"), 80); navigator.vibrate?.(120); }
+    else if (m.t === "error") {
+      if (joined) $("status").textContent = m.msg; else { $("joinStatus").textContent = m.msg; $("go").disabled = false; }
+      ws.onclose = null; ws.close();
+    }
+  };
+  ws.onclose = () => { if (joined) { $("status").textContent = "reconnecting..."; setTimeout(connect, 1000); } };
+}
+
+$("go").onclick = async () => {
+  wantRoom = $("room").value.trim().toUpperCase(); wantName = $("name").value.trim() || "pilot";
+  if (wantRoom.length !== 4) return void ($("joinStatus").textContent = "Enter the 4-letter code on the big screen.");
+  $("go").disabled = true; ls("gfc.name", wantName);
+  try {                                                                           // iOS needs this inside the tap, Android just sends events
+    if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== "granted") throw 0;
+    sensors = await new Promise((resolve) => {
+      const timer = setTimeout(() => { removeEventListener("deviceorientation", probe); resolve(false); }, 1500);
+      function probe(e) { if (e.gamma == null) return; clearTimeout(timer); removeEventListener("deviceorientation", probe); resolve(true); }
+      addEventListener("deviceorientation", probe);
+    });
+  } catch { sensors = false; }
+  try { await navigator.wakeLock?.request("screen"); } catch {}
+  connect();
+};
+
+setInterval(() => { if (role === "pilot" && ws?.readyState === 1) ws.send(`{"t":"in","r":${axes.r.toFixed(3)},"p":${axes.p.toFixed(3)}}`); }, 33);
+
+const fire = (on) => { $("fire").classList.toggle("down", on); if (ws?.readyState === 1) ws.send(`{"t":"fire","on":${on ? 1 : 0}}`); };
+$("fire").onpointerdown = (e) => { e.preventDefault(); fire(true); };
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) $("fire")["on" + ev] = () => fire(false);
+document.onvisibilitychange = () => { if (document.hidden) fire(false); else navigator.wakeLock?.request("screen").catch(() => {}); };
+
+$("recenter").onclick = () => { zero = last ? { ...last } : null; };
+$("invR").onclick = () => { flipR = !flipR; ls("gfc.flipR", flipR ? "1" : "0"); };
+$("invP").onclick = () => { flipP = !flipP; ls("gfc.flipP", flipP ? "1" : "0"); };
+
+$("field").onpointerdown = $("field").onpointermove = (e) => {                    // no-sensor fallback: drag in the box
+  if (sensors || (!e.buttons && e.pointerType !== "touch")) return;
+  const b = $("field").getBoundingClientRect();
+  axes.r = clamp(((e.clientX - b.left) / b.width) * 2 - 1, -1, 1);
+  axes.p = clamp(1 - ((e.clientY - b.top) / b.height) * 2, -1, 1);
+  showBall();
+};
+$("field").onpointerup = $("field").onpointercancel = () => { if (!sensors) { axes.r = axes.p = 0; showBall(); } };
+</script>
