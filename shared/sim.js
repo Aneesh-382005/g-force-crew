@@ -62,7 +62,7 @@ export function setFiring(g, id, on) {
 
 export function step(g) {
   g.tick++; g.t += DT; g.events.length = 0;
-  const k = 1 - Math.exp(-DT * 12), live = g.state !== "over";
+  const k = 1 - Math.exp(-DT * 20), live = g.state !== "over";
 
   const ships = [...g.ships.values()];
   for (const a of ships) {                                            // linked = wingmate within range: faster fire, double points

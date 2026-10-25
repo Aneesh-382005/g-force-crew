@@ -45,7 +45,7 @@ const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const lerp = (a, b, u) => a + (b - a) * u;
 let COLORS = [0xcccccc];                                      // replaced by the server's palette in the first message
-const HULL_MAX = 8, CYCLE_S = 120, DELAY = 90;
+const HULL_MAX = 8, CYCLE_S = 120, DELAY = 45;
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 const store = (k, v) => { try { return v == null ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch {} };
 

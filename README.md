@@ -74,6 +74,11 @@ If a direction feels backwards, use **Flip left/right** or **Flip up/down**. Put
 npm test      # sim rules + a real server with fake phones
 ```
 
+## Tuning the feel
+
+- `DELAY` in `public/screen.html` (45 ms): how far behind real time the screen draws, so it always has two snapshots to blend. Snapshots arrive every 33 ms, so keep it above that. If a slow projector laptop makes planes stutter, raise it to about 60.
+- The `20` in `step()` in `shared/sim.js`: how quickly a plane follows your tilt (higher is snappier, lower is smoother).
+
 ## Known limits
 
 - Anyone who knows the room URL can open a screen or join; there is no auth. Fine for a meetup, not for the open internet.
