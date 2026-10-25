@@ -10,7 +10,7 @@ services:
   tunnel:
     profiles: [tunnel]
     image: cloudflare/cloudflared
-    command: tunnel --no-autoupdate --url http://game:8000
+    command: tunnel --no-autoupdate --protocol http2 --url http://game:8000
     depends_on: [game]
   caddy:
     profiles: [https]

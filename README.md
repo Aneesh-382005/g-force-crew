@@ -13,7 +13,7 @@ A party game for a room of phones. A laptop shows the sky on a projector; everyo
 3. Open that link on the projector and press **Enter** to start. Everyone else scans the QR code.
 
 Stop with `docker compose --profile tunnel down`.
-No Docker? Run `npm install && npm start`, then `cloudflared tunnel --url http://localhost:8000`.
+No Docker? Run `npm install && npm start`, then `cloudflared tunnel --protocol http2 --url http://localhost:8000`.
 
 ## Playing
 
