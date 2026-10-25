@@ -120,7 +120,7 @@ function syncMeshes(map, list, make, place) {
   for (const row of list) {
     seen.add(row[0]);
     let m = map.get(row[0]);
-    if (!m) { m = make(row[0]); map.set(row[0], m); }
+    if (!m) { m = make(row[0]); scene.add(m); map.set(row[0], m); }
     place(m, row);
   }
   for (const [id, m] of map) if (!seen.has(id)) { scene.remove(m); map.delete(id); }
@@ -247,7 +247,6 @@ function frame(now) {
       const tag = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, fog: false }));
       tag.scale.set(9, 1.7, 1); tag.position.y = 3.2; g.add(tag);
       g.userData = { tag, color, text: null };
-      scene.add(g);
       return g;
     }, (m, r) => {
       const o = pa.get(r[0]) || r;
