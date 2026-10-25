@@ -11,6 +11,8 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 const MAX_ROOMS = 8, MAX_PLAYERS = 80, PHONE_GRACE = 20_000, SCREEN_GRACE = 120_000;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mp3": "audio/mpeg" };
 const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";                   // no I or O
+const COLORS = [0xff6b6b, 0x4dd0e1, 0xffd93d, 0xb388ff, 0x69f0ae, 0xff9ff3, 0xffa94d, 0x74c0fc];   // one per crew, shared by the screen and the phones
+const roomMsg = (r) => ({ t: "room", code: r.code, url: PUBLIC_URL || null, colors: COLORS });
 const randSeed = () => (Math.random() * 2 ** 31) | 0;
 const send = (ws, msg) => ws && ws.readyState === 1 && ws.send(JSON.stringify(msg));
 const alive = (p) => !!p && !!p.ws && p.ws.readyState === 1;
@@ -75,14 +77,14 @@ wss.on("connection", (ws) => {
           }
         }, 1000 / 30);
       }
-      send(ws, { t: "room", code: room.code, url: PUBLIC_URL || null });
+      send(ws, roomMsg(room));
       syncRoom(room);
 
     } else if (m.t === "watch" && !room) {
       const r = rooms.get(String(m.room || "").toUpperCase());
       if (!r) return send(ws, { t: "error", msg: "no such room" });
       room = r; r.viewers.add(ws);
-      send(ws, { t: "room", code: r.code, url: PUBLIC_URL || null });
+      send(ws, roomMsg(r));
       syncRoom(r);
 
     } else if (m.t === "join" && !room) {
@@ -102,7 +104,7 @@ wss.on("connection", (ws) => {
       clearTimeout(p.drop);
       p.ws = ws; p.name = String(m.name || "pilot").replace(/[<>&"'`]/g, "").slice(0, 12);
       room = r; me = p;
-      send(ws, { t: "joined", crew: p.crew });
+      send(ws, { t: "joined", crew: p.crew, color: COLORS[(p.crew - 1) % COLORS.length] });
       syncRoom(room);
 
     } else if (room && ws === room.screen) {

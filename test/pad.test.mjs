@@ -5,11 +5,11 @@ import { readFileSync } from "node:fs";
 
 // Loads the phone page, joins, feeds fake deviceorientation events, and reads what it would send.
 async function pad({ land, angle, early = false }) {
-  const els = new Map(), listeners = {}, sockets = [], timers = [];
+  const els = new Map(), listeners = {}, sockets = [], timers = [], vars = {};
   const el = (id) => els.get(id) || els.set(id, { style: {}, classList: { toggle() {}, add() {}, remove() {} }, value: "", textContent: "", innerHTML: "", getBoundingClientRect: () => ({}) }).get(id);
   const mem = { gfc: { "gfc.land": land ? "1" : "0" } };
   const win = {
-    document: { getElementById: el, body: { classList: { toggle() {} } } },
+    document: { getElementById: el, body: { classList: { toggle() {} } }, documentElement: { style: { setProperty: (k, v) => { vars[k] = v; } } } },
     localStorage: { getItem: (k) => mem.gfc[k] ?? null, setItem() {} }, sessionStorage: {},
     location: { protocol: "https:", host: "x", search: "?room=ABCD" }, navigator: { wakeLock: { request: async () => {} } },
     screen: { orientation: { angle } }, console, Math, JSON, Promise, Date, Number, String, Array, Object, URLSearchParams, setTimeout, clearTimeout,
@@ -26,9 +26,9 @@ async function pad({ land, angle, early = false }) {
   await new Promise((r) => setTimeout(r, 10));
   if (!early) listeners.deviceorientation.slice().forEach((f) => f({ gamma: 0, beta: 90 }));
   await click;
-  sockets[0].onmessage({ data: '{"t":"joined","crew":1}' });
+  sockets[0].onmessage({ data: '{"t":"joined","crew":1,"color":16739179}' });
   const feed = (beta, gamma) => { listeners.deviceorientation.forEach((f) => f({ beta, gamma })); sockets[0].sent.length = 0; timers[0](); return JSON.parse(sockets[0].sent[0]); };
-    return { feed, sockets, el, status: () => el("status").textContent };
+    return { feed, sockets, el, vars, status: () => el("status").textContent };
 }
 
 test("portrait tray: lean right steers right, top toward you climbs, shake is ignored", async () => {
@@ -76,4 +76,9 @@ test("switching mode forgets the other mode's reading, so an early Recenter cann
   feed(0.3, -90);
   assert.ok(Math.abs(feed(0.6, -90).r) < 0.05, "level stays level");
   assert.ok(feed(20.6, -90).r > 0.3, "and twisting still steers");
+});
+
+test("the phone tints itself with its plane's colour", async () => {
+  const { vars } = await pad({ land: false, angle: 0 });
+  assert.equal(vars["--tint"], "#ff6b6b");
 });

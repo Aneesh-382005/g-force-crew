@@ -32,6 +32,9 @@ test("players are paired into wing crews of two", async () => {
   assert.equal(url, "https://play.example.com");
   const a = await phone(code.toLowerCase(), "ann", "tok-a"), b = await phone(code, "bo", "tok-b"), c = await phone(code, "cy", "tok-c");
   assert.deepEqual([a, b, c].map((p) => p.last("joined").crew), [1, 1, 2]);
+  const [ca, cb, cc] = [a, b, c].map((p) => p.last("joined").color);
+  assert.ok(ca === cb && ca !== cc, "wingmates share a colour, other crews differ");
+  assert.equal(s.last("room").colors[0], ca, "the screen gets the same palette");
   assert.equal(s.last("roster").players.length, 3);
   for (const x of [s, a, b, c]) x.ws.close();
 });
