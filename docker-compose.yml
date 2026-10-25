@@ -1,0 +1,27 @@
+# docker compose up -d --build                         game on http://localhost:8000
+# docker compose --profile tunnel up -d --build        + a public https link (no cloudflared install needed)
+# DOMAIN=play.example.com docker compose --profile https up -d --build     + Caddy on 443 with a real certificate
+services:
+  game:
+    build: .
+    image: ${IMAGE:-g-force-crew}
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]
+  tunnel:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared
+    command: tunnel --no-autoupdate --url http://game:8000
+    depends_on: [game]
+  caddy:
+    profiles: [https]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [game]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+volumes:
+  caddy_data:
