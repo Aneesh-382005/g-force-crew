@@ -32,14 +32,16 @@ const http = createServer(async (req, res) => {
   }
 });
 
-// room: { code, screen, game, players: Map(token -> { token, id, ws, name, crew, drop }), crews: Map(id -> { id, members: [token] }), ... }
+// room: { code, screen (the host), viewers (extra screens, watch only), game, players: Map(token -> { token, id, ws, name, crew, drop }), crews: Map(id -> { id, members: [token] }), ... }
 const rooms = new Map();
+
+const toScreens = (room, msg) => [room.screen, ...room.viewers].forEach((w) => send(w, msg));
 
 const syncRoom = (room) => {
   const ids = new Set();
   for (const p of room.players.values()) { ids.add(p.id); syncShip(room.game, p.id, p.crew, alive(p)); }
   for (const id of [...room.game.ships.keys()]) if (!ids.has(id)) syncShip(room.game, id, null);
-  send(room.screen, {
+  toScreens(room, {
     t: "roster",
     players: [...room.players.values()].map((p) => ({ id: p.id, crew: p.crew, name: p.name, on: alive(p) })),
   });
@@ -60,12 +62,12 @@ wss.on("connection", (ws) => {
       else if (rooms.size >= MAX_ROOMS) return send(ws, { t: "error", msg: "too many rooms" });
       else {
         let code; do code = Array.from({ length: 4 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join(""); while (rooms.has(code));
-        const r = room = { code, screen: ws, game: createGame(randSeed()), players: new Map(), crews: new Map(), nextCrew: 1, nextId: 1, n: 0, grace: null };
+        const r = room = { code, screen: ws, game: createGame(randSeed()), players: new Map(), crews: new Map(), viewers: new Set(), nextCrew: 1, nextId: 1, n: 0, grace: null };
         rooms.set(code, r);
         r.loop = setInterval(() => {
           step(r.game);
           const snap = snapshot(r.game);
-          send(r.screen, { t: "snap", ...snap });
+          toScreens(r, { t: "snap", ...snap });
           for (const ev of snap.ev) if (ev[0] === "h") send([...r.players.values()].find((q) => q.id === ev[1])?.ws, { t: "hit" });
           if (++r.n % 8 === 0) for (const p of r.players.values()) {
             const ship = r.game.ships.get(p.id), mate = r.crews.get(p.crew).members.map((t) => r.players.get(t)).find((q) => q !== p);
@@ -75,6 +77,13 @@ wss.on("connection", (ws) => {
       }
       send(ws, { t: "room", code: room.code, url: PUBLIC_URL || null });
       syncRoom(room);
+
+    } else if (m.t === "watch" && !room) {
+      const r = rooms.get(String(m.room || "").toUpperCase());
+      if (!r) return send(ws, { t: "error", msg: "no such room" });
+      room = r; r.viewers.add(ws);
+      send(ws, { t: "room", code: r.code, url: PUBLIC_URL || null });
+      syncRoom(r);
 
     } else if (m.t === "join" && !room) {
       const r = rooms.get(String(m.room || "").toUpperCase());
@@ -107,6 +116,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     if (!room) return;
+    if (room.viewers.delete(ws)) return;
     if (ws === room.screen) {                                  // keep the room briefly so the screen can reload
       room.screen = null;
       room.grace = setTimeout(() => {

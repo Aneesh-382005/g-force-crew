@@ -88,8 +88,10 @@ export function step(g) {
       const rnd = waveRng(g.seed, g.waveIdx);
       const names = g.waveIdx < 2 ? ["scatter"] : Object.keys(PATTERNS);
       const n = Math.min(30, 5 + Math.round(g.waveIdx * 0.6) + Math.round(g.ships.size * 1.5));
-      for (const e of PATTERNS[names[Math.floor(rnd() * names.length)]](rnd, n))
+      const name = names[Math.floor(rnd() * names.length)];
+      for (const e of PATTERNS[name](rnd, n))
         g.queue.push({ at: g.t + e.at, x: clamp(e.x, -W.X, W.X), y: clamp(e.y, W.YMIN, W.YMAX) });
+      g.events.push(["w", g.waveIdx + 1, name]);
       g.queue.sort((a, b) => a.at - b.at);
       g.nextWave = g.queue[g.queue.length - 1].at + Math.max(1.6, 4 - g.waveIdx * 0.12);
       g.waveIdx++;

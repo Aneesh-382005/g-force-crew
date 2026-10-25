@@ -36,6 +36,23 @@ test("players are paired into wing crews of two", async () => {
   for (const x of [s, a, b, c]) x.ws.close();
 });
 
+test("a second screen can watch the same room but not start it", async () => {
+  const host = await screen(); const { code } = host.last("room");
+  await phone(code, "ann", "tok-w");
+  const viewer = client(); await viewer.ready; viewer.send({ t: "watch", room: code.toLowerCase() }); await sleep(150);
+  assert.equal(viewer.last("room").code, code);
+  assert.equal(viewer.last("roster").players.length, 1);
+  viewer.send({ t: "start" }); await sleep(150);
+  assert.equal(host.last("snap").s, "lobby", "a viewer cannot start the game");
+  host.send({ t: "start" }); await sleep(250);
+  assert.equal(viewer.last("snap").s, "play", "the viewer sees the same game");
+  viewer.ws.close(); await sleep(100);
+  assert.ok(host.last("snap"), "host keeps working after a viewer leaves");
+  const lost = client(); await lost.ready; lost.send({ t: "watch", room: "ZZZZ" }); await sleep(100);
+  assert.equal(lost.last("error").msg, "no such room");
+  for (const x of [host, lost]) x.ws.close();
+});
+
 test("unknown room is refused", async () => {
   const p = await phone("ZZZZ", "x", "tok-x");
   assert.equal(p.last("error").msg, "no such room");

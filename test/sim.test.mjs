@@ -107,3 +107,12 @@ test("starting a new game resets kills", () => {
   const g = solo(); g.ships.get(1).kills = 5; startGame(g);
   assert.equal(g.ships.get(1).kills, 0);
 });
+
+test("each wave is announced once, with its number and pattern", () => {
+  const g = solo(); startGame(g); g.ships.get(1).inv = 1e9;
+  const waves = [];
+  for (let i = 0; i < 30 * 40; i++) { step(g); for (const ev of g.events) if (ev[0] === "w") waves.push(ev.slice(1)); }
+  assert.ok(waves.length >= 4);
+  assert.deepEqual(waves.map((w) => w[0]), waves.map((_, i) => i + 1));
+  assert.ok(waves.slice(0, 2).every((w) => w[1] === "scatter"), "the first two waves are gentle");
+});

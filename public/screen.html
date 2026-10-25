@@ -1,4 +1,5 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
@@ -16,23 +17,26 @@
   #room { top: 16px; right: 28px; text-align: right; font-size: 16px; }
   #room b { display: block; font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
   #panel { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  #card { background: var(--panel); border-radius: 24px; padding: 28px 40px; text-align: center; max-width: 760px; backdrop-filter: blur(6px); }
+  #card { background: var(--panel); border-radius: 24px; padding: 28px 40px; text-align: center; max-width: 900px; backdrop-filter: blur(6px); }
   #card h1 { margin: 0 0 6px; font-size: 54px; letter-spacing: .04em; }
   #card img { width: 240px; height: 240px; image-rendering: pixelated; border-radius: 12px; background: #fff; padding: 8px; }
-  #crews { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0; max-height: 160px; overflow: hidden; }
-  .crew { background: #ffffff18; border-radius: 10px; padding: 4px 12px; font-size: 17px; }
+  #crews { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0; max-height: 210px; overflow: hidden; }
+  .crew { background: #ffffff18; border-radius: 10px; padding: 4px 14px; font-size: 22px; }
   .off { opacity: .45; }
   button { font: inherit; font-weight: 700; padding: 14px 34px; border: 0; border-radius: 14px; background: var(--accent); color: #111; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
   #tools { bottom: 14px; left: 20px; font-size: 14px; opacity: .7; }
+  #banner { top: 96px; left: 50%; transform: translateX(-50%); font-size: 46px; font-weight: 800; letter-spacing: .06em; white-space: nowrap; opacity: 0; transition: opacity .4s; }
+  #more { font-size: 15px; opacity: .65; margin-top: 10px; }
 </style>
 
 <div id="flash" class="hud"></div>
 <div id="score" class="hud"></div>
 <div id="hull" class="hud"></div>
 <div id="room" class="hud"></div>
+<div id="banner" class="hud"></div>
 <div id="panel"><div id="card"></div></div>
-<div id="tools" class="hud">Enter start · M sound · N skip time</div>
+<div id="tools" class="hud">Enter start · M sound · N skip time · C calm mode</div>
 
 <script src="vendor/three.min.js"></script>
 <script src="vendor/qrcode.js"></script>
@@ -133,7 +137,9 @@ function syncMeshes(map, list, make, place) {
 }
 
 /* ---------- state from the server ---------- */
-let ws, code = sessionStorage.getItem("gfc.code") || "", baseUrl = location.origin;
+const watch = (new URLSearchParams(location.search).get("watch") || "").toUpperCase();       // ?watch=CODE: an extra screen for the same game
+let ws, code = watch || sessionStorage.getItem("gfc.code") || "", baseUrl = location.origin, calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let bannerTimer;
 let state = "lobby", roster = [], score = 0, hull = HULL_MAX, best = +store("gfc.best") || 0, shake = 0, flash = 0;
 const buf = [];                                              // recent snapshots; drawn DELAY ms in the past so motion is smooth
 
@@ -148,21 +154,22 @@ function drawCard() {
   if (state === "over") {
     const rank = [...(buf.at(-1)?.s.sh ?? [])].sort((a, b) => b[9] - a[9]).map((r, i) =>
       `<div class="crew" style="border-left:6px solid ${hex(COLORS[(r[1] - 1) % COLORS.length])}">${i === 0 && r[9] ? "★ " : ""}${roster.find((p) => p.id === r[0])?.name ?? "?"} <b>${r[9]}</b></div>`).join("");
-    $("card").innerHTML = `<h1>GAME OVER</h1><div>Team score <b>${score}</b> · best ${best}</div><div id="crews">${rank}</div><button id="start">Play again</button>`;
+    $("card").innerHTML = `<h1>GAME OVER</h1><div>Team score <b>${score}</b> · best ${best}</div><div id="crews">${rank}</div>` + (watch ? "" : '<button id="start">Play again</button>');
   } else {
     let qr = "";
     if (code) { const q = qrcode(0, "M"); q.addData(`${baseUrl}/pad?room=${code}`); q.make(); qr = `<img alt="join QR" src="${q.createDataURL(6, 2)}">`; }
     $("card").innerHTML = `<h1>G-FORCE CREW</h1><div>Scan to join · you get a plane and a wingmate: fly close to link up for x2</div>${qr}` +
-      `<div id="crews">${list || "<i>waiting for pilots...</i>"}</div><button id="start" ${players ? "" : "disabled"}>Start (${players} playing)</button>`;
+      `<div id="crews">${list || "<i>waiting for players...</i>"}</div>` +
+      (watch ? "<div>Watching: the host starts the game</div>" : `<button id="start" ${players ? "" : "disabled"}>Start (${players} playing)</button><div id="more">Second screen? open ${baseUrl.replace(/^https?:\/\//, "")}/?watch=${code}</div>`);
   }
-  $("start").onclick = start;
+  if ($("start")) $("start").onclick = start;
 }
 
-function start() { unlock(); if (ws.readyState === 1) ws.send('{"t":"start"}'); }
+function start() { unlock(); if (!watch && ws.readyState === 1) ws.send('{"t":"start"}'); }
 
 function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: "create", code }));
+  ws.onopen = () => ws.send(JSON.stringify(watch ? { t: "watch", room: watch } : { t: "create", code }));
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.t === "snap") {
@@ -176,12 +183,16 @@ function connect() {
       for (const ev of m.ev) {
         if (ev[0] === "f") sfx("fire");
         else if (ev[0] === "k") { burst(ev[1], ev[2], ev[3], 0xffb347); sfx("boom"); }
-        else if (ev[0] === "h") { burst(ev[2], ev[3], 0, 0xff3030, 18); shake = flash = 1; sfx("hurt"); }
+        else if (ev[0] === "h") { burst(ev[2], ev[3], 0, 0xff3030, 18); shake = flash = calm ? 0 : 1; sfx("hurt"); }
+        else if (ev[0] === "w") {
+          $("banner").textContent = `WAVE ${ev[1]} · ${{ scatter: "SCATTER", wall: "WALL: find the gap!", snake: "SNAKE", pincer: "PINCER" }[ev[2]]}`;
+          $("banner").style.opacity = 1; clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { $("banner").style.opacity = 0; }, 2200);
+        }
         else if (ev[0] === "o") { sfx("hurt"); if (score > best) { best = score; store("gfc.best", best); } }
       }
     } else if (m.t === "roster") { roster = m.players; drawCard(); }
     else if (m.t === "room") {
-      code = m.code; sessionStorage.setItem("gfc.code", code); if (m.url) baseUrl = m.url;
+      code = m.code; if (!watch) sessionStorage.setItem("gfc.code", code); if (m.url) baseUrl = m.url;
       $("room").innerHTML = `join at ${baseUrl.replace(/^https?:\/\//, "")}/pad<b>${code}</b>`;
       drawCard();
     }
@@ -192,6 +203,7 @@ function connect() {
 addEventListener("keydown", (e) => {
   if (e.key === "Enter" && state !== "play") start();
   else if (e.key === "n" || e.key === "N") clock = ([0, 0.18, 0.5, 0.66].find((m) => m > (clock / CYCLE_S) % 1 + 0.01) ?? 1) * CYCLE_S;   // dawn, day, dusk, night
+  else if (e.key === "c" || e.key === "C") { calm = !calm; shake = flash = 0; }
   else if (e.key === "m" || e.key === "M") { unlock(); audio.on = !audio.on; audio.master.gain.value = audio.on ? 1 : 0; }
 });
 

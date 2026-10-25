@@ -16,8 +16,8 @@ test("planes, enemies, bullets and the wing beam all end up in the scene", () =>
   const ctx = vm.createContext({
     document: { getElementById: () => stub(), createElement: () => stub(), body: stub() },
     localStorage: mem, sessionStorage: mem, location: { protocol: "http:", host: "x", origin: "http://x" },
-    performance, console, Math, JSON, Promise, Float32Array, Event: class {}, innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1,
-    addEventListener() {}, dispatchEvent() {}, setTimeout, fetch: () => Promise.reject(), AudioContext: stub(), qrcode: stub(),
+    performance, console, Math, JSON, Promise, Float32Array, URLSearchParams, matchMedia: () => ({ matches: false }), Event: class {}, innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1,
+    addEventListener() {}, dispatchEvent() {}, setTimeout, clearTimeout, fetch: () => Promise.reject(), AudioContext: stub(), qrcode: stub(),
     requestAnimationFrame: (f) => raf.push(f),
     WebSocket: class { constructor() { sockets.push(this); this.readyState = 1; } send() {} },
   });

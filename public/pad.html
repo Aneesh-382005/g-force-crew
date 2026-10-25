@@ -1,6 +1,7 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="data:,">
 <title>G-Force Crew pad</title>
 <style>
@@ -22,6 +23,8 @@
   .pip.off { background: #ffffff30; }
   #row { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
   @media (orientation: landscape) and (max-height: 520px) {
+    #join { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    #join h1, #joinStatus { grid-column: 1 / -1; }
     #row { flex-direction: row; }
     body { padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); gap: 8px; }
   }

@@ -28,7 +28,7 @@ async function pad({ land, angle, early = false }) {
   await click;
   sockets[0].onmessage({ data: '{"t":"joined","crew":1}' });
   const feed = (beta, gamma) => { listeners.deviceorientation.forEach((f) => f({ beta, gamma })); sockets[0].sent.length = 0; timers[0](); return JSON.parse(sockets[0].sent[0]); };
-  return { feed, sockets, el, status: () => el("status").textContent };
+    return { feed, sockets, el, status: () => el("status").textContent };
 }
 
 test("portrait tray: lean right steers right, top toward you climbs, shake is ignored", async () => {

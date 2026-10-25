@@ -47,6 +47,14 @@ Offline (no internet at the venue): copy `dist/g-force-crew-amd64.tar.gz` on a U
 
 Only one machine needs to host. Everyone else just opens the link.
 
+## Ways to run an event
+
+All three work with the same build:
+
+- **One projector, everyone plays.** Run the server on the laptop that drives the projector and open the page full-screen on it. Everyone scans the QR code and flies in the same world. Only the phone-to-laptop leg crosses a network; the screen is on the same machine as the server, so nothing has to travel back.
+- **A screen per pair.** Each extra laptop opens the same server URL and gets its **own room and code** (up to 8 rooms), so two players fly at each screen.
+- **A second screen for the same game.** Open `/?watch=CODE` on another laptop or projector to mirror a running game. Only the host screen can start it.
+
 ## Controls
 
 | | |
@@ -56,7 +64,7 @@ Only one machine needs to host. Everyone else just opens the link.
 | Recenter | sets "level" to how you are holding the phone now |
 | Mode | the **Mode** button switches portrait tray / landscape wheel. The page asks you to rotate the phone if it disagrees with the mode |
 | No motion sensor | drag inside the box instead |
-| Big screen | `Enter` start / play again, `M` sound, `N` skip time of day |
+| Big screen | `Enter` start / play again, `M` sound, `N` skip time of day, `C` calm mode (no screen shake or flashes; on by default if the system asks for reduced motion) |
 
 If a direction feels backwards, use **Flip left/right** or **Flip up/down**. Put your own audio at `public/music.mp3` and the big screen loops it (not included).
 
